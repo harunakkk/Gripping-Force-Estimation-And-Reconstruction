@@ -161,7 +161,7 @@ def main():
     listener = EmgCollector(512)
     
     # Open the serial connection to Arduino
-    serial_port = serial.Serial('COM5', 9600, timeout=1)  # Update with your Arduino's serial port
+    serial_port = serial.Serial('COM5', 115200, timeout=1)  # Update with your Arduino's serial port
 
     # Start reading force data in a separate thread
     force_data = deque(maxlen=512)  # List to store force data
