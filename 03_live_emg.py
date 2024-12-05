@@ -164,7 +164,7 @@ def main():
     serial_port = serial.Serial('COM5', 9600, timeout=1)  # Update with your Arduino's serial port
 
     # Start reading force data in a separate thread
-    force_data = []  # List to store force data
+    force_data = deque(maxlen=512)  # List to store force data
     force_thread = Thread(target=read_force_data, args=(serial_port, force_data), daemon=True)
     force_thread.start()
 
