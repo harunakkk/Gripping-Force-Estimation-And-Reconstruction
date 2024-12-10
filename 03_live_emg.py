@@ -113,8 +113,9 @@ def read_force_data(serial_port, force_buffers):
                         log_file.write(",".join(map(str, forces)) + "\n")
                         log_file.flush()
 
-                    for i, force_value in enumerate(forces):
-                        force_buffers[i].append(force_value)
+                    with data_lock:
+                        for i, force_value in enumerate(forces):
+                            force_buffers[i].append(force_value)
             
             except Exception as e:
                 print(f"Error reading from Arduino: {e}")
