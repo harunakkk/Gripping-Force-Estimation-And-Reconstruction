@@ -95,12 +95,6 @@ class Plot(object):
         plt.draw()
         plt.pause(1.0 / 30)  # 30 FPS
 
-    def main(self):
-        while True:
-            with data_lock:
-                self.update_plot()
-            plt.pause(1.0 / 30)
-
 
 def read_force_data(serial_port, force_buffers):
     with open("force_readings.txt", "w") as log_file:
@@ -158,13 +152,14 @@ def main():
     plot = Plot(listener, force_buffers)
     try:
         with hub.run_in_background(listener.on_event):
-            print("Collecting data... Press Ctrl+C to stop.")
+            print("Veri toplanıyor... Durdurmak için Ctrl+C basın.")
             while True:
-                plot.update_plot()
+                with data_lock:
+                    plot.update_plot()
                 time.sleep(1.0 / 30)  # 30 FPS
 
     except KeyboardInterrupt:
-        print("Stopping data collection.")
+        print("Veri toplaması durduruluyor.")
     finally:
         serial_port.close()
         plt.close('all')
