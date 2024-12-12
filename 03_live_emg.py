@@ -6,13 +6,11 @@ from threading import Lock, Thread
 import myo
 import joblib
 import time
+import csv
 
 
-# Kuvvet ölçümü için polinomal kofaktörler
 params = joblib.load("force_interp_polynomial.pkl")
-# Global force_buffers
 force_buffers = [deque(maxlen=512) for _ in range(5)]
-# Kuvvet ve EMG verisi toplanışını senkronize etmek için veri kilidi
 data_lock = Lock()
 
 
@@ -45,8 +43,6 @@ class Plot(object):
         self.listener = listener
         global force_buffers
         self.force_buffers = force_buffers
-
-        # 8 EMG ve 5 FSR olmak üzere toplam 13 subplot
         self.fig, self.ax = plt.subplots(13, 1, figsize=(10, 12))
 
         # EMG Grafikleri
@@ -91,38 +87,33 @@ class Plot(object):
             plot.set_ydata(data)
             plot.set_xdata(np.arange(len(data)))
         
-        # Grafiği tekrardan çizerek bir sonraki kare için durdur
         plt.draw()
         plt.pause(1.0 / 30)  # 30 FPS
 
 
 def read_force_data(serial_port, force_buffers):
-    with open("force_readings.txt", "w") as log_file:
-        while True:
-            try:
-                line = serial_port.readline().decode('utf-8').strip()
+    while True:
+        try:
+            line = serial_port.readline().decode('utf-8').strip()
 
-                if line:
-                    readings = [int(value) for value in line.split(",")]
-                    forces = []
-                    
-                    for reading in readings:
-                        voltage = reading / 1023 * 5
-                        force = calculate_force(voltage)
-                        forces.append(force)
-                        log_file.write(",".join(map(str, forces)) + "\n")
-                        log_file.flush()
+            if line:
+                readings = [int(value) for value in line.split(",")]
+                forces = []
+                
+                for reading in readings:
+                    voltage = reading / 1023 * 5
+                    force = calculate_force(voltage)
+                    forces.append(force)
 
-                    with data_lock:
-                        for i, force_value in enumerate(forces):
-                            force_buffers[i].append(force_value)
-            
-            except Exception as e:
-                print(f"Error reading from Arduino: {e}")
-                break
+                with data_lock:
+                    for i, force_value in enumerate(forces):
+                        force_buffers[i].append(force_value)
+        
+        except Exception as e:
+            print(f"Error reading from Arduino: {e}")
+            break
 
 
-# Okunulan voltajdan kuvvet hesabı için polinomal fit
 def calculate_force(voltage):
     a, b, c, d = params
     force = a * voltage**3 + b * voltage**2 + c * voltage + d
@@ -141,6 +132,30 @@ def map_emg_to_force(emg_data, force_data):
     return force_value
 
 
+def log_data(listener, force_buffers, log_file_path="dataset.csv"):
+    """
+    Senkronize EMG ve kuvvet sensör verisini CSV dosyasına yaz
+    """
+    with open(log_file_path, "w", newline='') as csvfile:
+        fieldnames = [f"EMG{i+1}" for i in range(8)] + [f"Force{i+1}" for i in range(5)]
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        writer.writeheader()
+        while True:
+            with data_lock:
+                emg_data = listener.get_emg_data()
+                force_data = [list(force_buffers[i]) for i in range(5)]
+
+                if len(emg_data) > 0 and all(len(data) > 0 for data in force_data):
+                    latest_emg = emg_data[-1][1]
+                    latest_force = [data[-1] for data in force_data]
+                    row = {f"EMG{i+1}": latest_emg[i] for i in range(8)}
+                    row.update({f"Force{i+1}": latest_force[i] for i in range(5)})
+                    writer.writerow(row)
+                    csvfile.flush()
+
+            time.sleep(0.005)
+
+
 def main():
     myo.init(sdk_path='D:\Arşiv\Medya\Belgeler\irl\Bitirme Projesi\Gripping-Force-Estimation-And-Reconstruction\myo-sdk-win-0.9.0')  # Replace with the correct SDK path
     hub = myo.Hub()
@@ -148,8 +163,15 @@ def main():
     serial_port = serial.Serial('COM5', 115200, timeout=2) # Arduino Seri Port
     serial_port.flushInput()
     global force_buffers
+
+    # Kuvvet sensörü threadi
     force_thread = Thread(target=read_force_data, args=(serial_port, force_buffers), daemon=True)
     force_thread.start()
+
+    # Veri yazma threadi
+    log_thread = Thread(target=log_data, args=(listener, force_buffers, "dataset.csv"), daemon=True)
+    log_thread.start()
+
     plot = Plot(listener, force_buffers)
     try:
         with hub.run_in_background(listener.on_event):
