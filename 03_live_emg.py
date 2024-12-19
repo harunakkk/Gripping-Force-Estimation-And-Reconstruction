@@ -1,3 +1,4 @@
+import argparse
 import serial
 import numpy as np
 import matplotlib.pyplot as plt
@@ -122,16 +123,6 @@ def calculate_force(voltage):
     return force
 
 
-def map_emg_to_force(emg_data, force_data):
-    """
-    This function maps EMG data to force values. 
-    You could use a regression model or predefined mapping.
-    """
-    emg_sum = np.sum(np.abs(emg_data))
-    force_value = np.interp(emg_sum, [0, 500], [0, max(force_data)])  # Normalize based on the force range
-    return force_value
-
-
 def log_data(listener, force_buffers, log_file_path="dataset.csv"):
     """
     Senkronize EMG ve kuvvet sensör verisini CSV dosyasına yaz
@@ -156,7 +147,7 @@ def log_data(listener, force_buffers, log_file_path="dataset.csv"):
             time.sleep(0.005)
 
 
-def main():
+def main(duration=None):
     myo.init(sdk_path='D:\Arşiv\Medya\Belgeler\irl\Bitirme Projesi\Gripping-Force-Estimation-And-Reconstruction\myo-sdk-win-0.9.0')  # Replace with the correct SDK path
     hub = myo.Hub()
     listener = EmgCollector(512)
@@ -173,6 +164,7 @@ def main():
     log_thread.start()
 
     plot = Plot(listener, force_buffers)
+    start_time = time.time()
     try:
         with hub.run_in_background(listener.on_event):
             print("Veri toplanıyor... Durdurmak için Ctrl+C basın.")
@@ -181,12 +173,21 @@ def main():
                     plot.update_plot()
                 time.sleep(1.0 / 30)  # 30 FPS
 
+                if duration and (time.time() - start_time) >= duration:
+                    print(f"\n{duration} saniyelik veri ./dataset.csv dizinine yazıldı.")
+                    break
+
     except KeyboardInterrupt:
-        print("Veri toplaması durduruluyor.")
+        print("Veri toplaması durduruluyor..")
     finally:
         serial_port.close()
         plt.close('all')
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Collect EMG and force sensor data.")
+    parser.add_argument("-d", "--duration", type=int, default=None, help="Data collection duration in seconds.")
+    args = parser.parse_args()
+
+    # Call the main function with the specified duration
+    main(duration=args.duration)
